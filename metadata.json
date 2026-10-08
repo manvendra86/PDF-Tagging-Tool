@@ -1,0 +1,6 @@
+{
+  "name": "PyMuPDF AcroForm Inspector & Streamlit Studio",
+  "description": "Inspect and edit interactive PDF AcroForm fields, modify widget identifiers, choice values, and export states with visual previews and complete Python Streamlit application.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
