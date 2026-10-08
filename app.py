@@ -8,6 +8,7 @@ default values, etc.), saving modifications back to the document with PyMuPDF,
 and downloading the finalized PDF.
 """
 
+import base64
 import io
 import fitz  # PyMuPDF
 from PIL import Image, ImageDraw
@@ -68,6 +69,8 @@ WIDGET_TYPE_NAMES = {
     fitz.PDF_WIDGET_TYPE_SIGNATURE: "Digital Signature",
     fitz.PDF_WIDGET_TYPE_TEXT: "Text Field",
 }
+
+ZOOM_OPTIONS = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5]
 
 
 def create_sample_fillable_pdf() -> bytes:
@@ -228,9 +231,12 @@ def extract_all_fields(pdf_bytes: bytes) -> list[dict]:
                 except Exception:
                     on_state = ""
             if not on_state:
-                on_state = getattr(widget, "on_state", "Yes") if hasattr(widget, "on_state") else "Yes"
+                on_state = getattr(widget, "on_state", "") if hasattr(widget, "on_state") else ""
+            if not on_state:
+                on_state = f"Option_{button_idx}" if w_type == fitz.PDF_WIDGET_TYPE_RADIOBUTTON else "Yes"
 
             fields.append({
+                "global_idx": len(fields),
                 "page_idx": page_idx,
                 "widget_idx": w_idx,
                 "button_idx": button_idx,
@@ -241,9 +247,14 @@ def extract_all_fields(pdf_bytes: bytes) -> list[dict]:
                 "default_value": getattr(widget, "default_value", "") or "",
                 "choice_values": getattr(widget, "choice_values", []) or [],
                 "rect": [round(coord, 2) for coord in widget.rect],
-                "on_state": on_state or "Option",
+                "on_state": on_state,
                 "field_flags": widget.field_flags,
             })
+
+    # Annotate total buttons in each radio group
+    for f in fields:
+        group_key = f"{f['field_name']}_{f['field_type']}"
+        f["total_in_group"] = group_counts.get(group_key, 1)
 
     doc.close()
     return fields
@@ -253,16 +264,16 @@ def render_page_with_highlight(
     pdf_bytes: bytes,
     page_idx: int,
     target_rect: list[float] | None = None,
-    zoom_factor: float = 2.0,
+    zoom_factor: float = 1.5,
 ) -> Image.Image:
     """Render a visual PNG image preview of the specific page with a highlight box over target_rect."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     if page_idx >= len(doc):
         doc.close()
-        return Image.new("RGB", (400, 200), color=(240, 240, 240))
+        return Image.new("RGB", (500, 300), color=(15, 23, 42))
 
     page = doc[page_idx]
-    zoom = zoom_factor
+    zoom = max(0.5, float(zoom_factor))
     mat = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=mat, alpha=False)
 
@@ -275,7 +286,7 @@ def render_page_with_highlight(
         x0, y0, x1, y1 = target_rect
         scaled_box = [x0 * zoom, y0 * zoom, x1 * zoom, y1 * zoom]
 
-        padding = 3 * zoom
+        padding = max(2, int(3 * zoom))
         outer_box = [
             scaled_box[0] - padding,
             scaled_box[1] - padding,
@@ -284,7 +295,8 @@ def render_page_with_highlight(
         ]
 
         # Outer highlight border (vivid indigo border)
-        for i in range(int(3 * zoom)):
+        border_thickness = max(2, int(2.5 * zoom))
+        for i in range(border_thickness):
             draw.rectangle(
                 [outer_box[0] - i, outer_box[1] - i, outer_box[2] + i, outer_box[3] + i],
                 outline=(79, 70, 229, 255),
@@ -357,18 +369,17 @@ def update_field_in_pdf(
         if hasattr(target_widget, "default_value"):
             target_widget.default_value = new_default_val
 
-        # 3. Update field name identifier
+        # 3. Update field name identifier across document
         if new_field_name and new_field_name.strip():
             trimmed_name = new_field_name.strip()
-            target_widget.field_name = trimmed_name
-
             # If this is a radio button or grouped widget, update all sibling widgets in the group across the document
             if target_widget.field_type == fitz.PDF_WIDGET_TYPE_RADIOBUTTON:
                 for p in doc:
                     for w in p.widgets():
-                        if w.field_name == original_field_name:
+                        if w.field_name == original_field_name or w.field_name == target_widget.field_name:
                             w.field_name = trimmed_name
                             w.update()
+            target_widget.field_name = trimmed_name
 
         target_widget.update()
 
@@ -389,8 +400,14 @@ if "filename" not in st.session_state:
 if "success_msg" not in st.session_state:
     st.session_state["success_msg"] = None
 
-if "zoom_level" not in st.session_state:
-    st.session_state["zoom_level"] = 1.8
+if "zoom_level" not in st.session_state or st.session_state["zoom_level"] not in ZOOM_OPTIONS:
+    st.session_state["zoom_level"] = 1.5
+
+if "selected_field_idx" not in st.session_state:
+    st.session_state["selected_field_idx"] = 0
+
+if "preview_page_idx" not in st.session_state:
+    st.session_state["preview_page_idx"] = 0
 
 
 # ---------------------------------------------------------
@@ -414,6 +431,8 @@ with col_upload:
             st.session_state["current_pdf_bytes"] = file_bytes
             st.session_state["filename"] = uploaded_file.name
             st.session_state["last_uploaded_name"] = uploaded_file.name
+            st.session_state["selected_field_idx"] = 0
+            st.session_state["preview_page_idx"] = 0
             st.session_state["success_msg"] = f"Uploaded '{uploaded_file.name}' successfully."
             st.rerun()
 
@@ -424,6 +443,8 @@ with col_sample:
         st.session_state["current_pdf_bytes"] = create_sample_fillable_pdf()
         st.session_state["filename"] = "sample_fillable_form.pdf"
         st.session_state["last_uploaded_name"] = "sample_fillable_form.pdf"
+        st.session_state["selected_field_idx"] = 0
+        st.session_state["preview_page_idx"] = 0
         st.session_state["success_msg"] = "Loaded multi-page sample fillable PDF with text, checkboxes, radio group & listbox."
         st.rerun()
 
@@ -446,46 +467,80 @@ if not fields:
     st.warning("⚠️ No interactive AcroForm fields were detected in this document. Please upload a fillable PDF or load the sample.")
     st.stop()
 
+total_doc_pages = fitz.open(stream=pdf_bytes, filetype="pdf").page_count
+
 # ---------------------------------------------------------
 # Sidebar: Field Detection & Navigation
 # ---------------------------------------------------------
 st.sidebar.header(f"Detected Fields ({len(fields)})")
 
 # Search / Filter
-filter_text = st.sidebar.text_input("🔍 Filter fields by name or option:", "")
+filter_text = st.sidebar.text_input("🔍 Filter fields by name, option, or value:", "")
 filtered_indices = [
     i for i, f in enumerate(fields)
     if filter_text.lower() in f["field_name"].lower()
     or filter_text.lower() in f["field_type_str"].lower()
-    or filter_text.lower() in f["on_state"].lower()
+    or filter_text.lower() in str(f.get("on_state", "")).lower()
+    or filter_text.lower() in str(f.get("field_value", "")).lower()
 ]
 
 if not filtered_indices:
     st.sidebar.info("No fields match your filter.")
     filtered_indices = list(range(len(fields)))
 
-# Format options for sidebar selector
+# Format options for sidebar selector with LIVE dynamic values
 def format_sidebar_label(idx: int) -> str:
     f = fields[idx]
-    if f["field_type"] == fitz.PDF_WIDGET_TYPE_RADIOBUTTON:
-        return f"P.{f['page_idx'] + 1} | {f['field_name']} [Button {f['button_idx']}: '{f['on_state']}'] (Radio)"
-    elif f["field_type"] == fitz.PDF_WIDGET_TYPE_CHECKBOX:
-        return f"P.{f['page_idx'] + 1} | {f['field_name']} (Checkbox)"
-    return f"P.{f['page_idx'] + 1} | {f['field_name']} [{f['field_type_str']}]"
+    val = f.get("field_value")
+    w_type = f["field_type"]
+    page_str = f"P{f['page_idx'] + 1}"
+    name_str = f["field_name"]
+
+    if w_type == fitz.PDF_WIDGET_TYPE_RADIOBUTTON:
+        opt = f.get("on_state", f"Option_{f['button_idx']}")
+        is_sel = False
+        if isinstance(val, bool):
+            is_sel = val
+        elif val is not None and str(val).strip():
+            is_sel = (str(val) == str(opt))
+        sel_symbol = "● Selected" if is_sel else "○ Inactive"
+        return f"{page_str} | {name_str} [{sel_symbol}: '{opt}'] (Radio #{f['button_idx']}/{f.get('total_in_group', 1)})"
+
+    elif w_type == fitz.PDF_WIDGET_TYPE_CHECKBOX:
+        chk_status = "✓ Checked" if bool(val) else "✗ Unchecked"
+        return f"{page_str} | {name_str} [{chk_status}] (Checkbox)"
+
+    elif w_type in (fitz.PDF_WIDGET_TYPE_COMBOBOX, fitz.PDF_WIDGET_TYPE_LISTBOX):
+        display_val = str(val)[:18] if val else "(none)"
+        return f"{page_str} | {name_str} [Val: '{display_val}'] ({f['field_type_str'].split()[0]})"
+
+    else:
+        # Text field
+        display_val = str(val)[:18] if val else "(empty)"
+        return f"{page_str} | {name_str} [Val: '{display_val}']"
+
+# Ensure selected index is within bounds of filtered list
+default_sidebar_idx = 0
+if st.session_state.get("selected_field_idx") in filtered_indices:
+    default_sidebar_idx = filtered_indices.index(st.session_state["selected_field_idx"])
 
 selected_index = st.sidebar.radio(
     "Select a field to inspect & edit:",
     options=filtered_indices,
     format_func=format_sidebar_label,
-    index=0,
+    index=default_sidebar_idx,
+    key="sidebar_field_radio",
 )
 
+st.session_state["selected_field_idx"] = selected_index
 selected_field = fields[selected_index]
 active_page_idx = selected_field["page_idx"]
 
+# Sync page preview when field selection changes
+st.session_state["preview_page_idx"] = active_page_idx
+
 # Sidebar Summary
 st.sidebar.divider()
-total_doc_pages = fitz.open(stream=pdf_bytes, filetype="pdf").page_count
 st.sidebar.markdown(f"**Document Name:** `{st.session_state['filename']}`")
 st.sidebar.markdown(f"**Total Pages:** {total_doc_pages}")
 st.sidebar.markdown(f"**Total Form Widgets:** {len(fields)}")
@@ -501,6 +556,34 @@ with col_editor:
         f"Editing widget **`{selected_field['field_name']}`** on **Page {active_page_idx + 1}** "
         f"*(Type: {selected_field['field_type_str']})*"
     )
+
+    # Sibling Radio Buttons Quick Bar
+    if selected_field["field_type"] == fitz.PDF_WIDGET_TYPE_RADIOBUTTON:
+        siblings = [
+            f for f in fields
+            if f["field_type"] == fitz.PDF_WIDGET_TYPE_RADIOBUTTON
+            and f["field_name"] == selected_field["field_name"]
+        ]
+        if len(siblings) > 1:
+            st.markdown(f"**Radio Group Buttons ({len(siblings)} buttons in '{selected_field['field_name']}'):**")
+            cols_s = st.columns(len(siblings))
+            for s_idx, sib in enumerate(siblings):
+                with cols_s[s_idx]:
+                    is_current = sib["global_idx"] == selected_field["global_idx"]
+                    is_active = (
+                        bool(sib["field_value"])
+                        if isinstance(sib["field_value"], bool)
+                        else (str(sib["field_value"]) == str(sib["on_state"]))
+                    )
+                    marker = "● " if is_active else "○ "
+                    label = f"{marker}Btn {sib['button_idx']}: {sib['on_state']}"
+                    if is_current:
+                        st.button(f"👉 {label}", key=f"sib_btn_{sib['global_idx']}", disabled=True, use_container_width=True)
+                    else:
+                        if st.button(label, key=f"sib_btn_{sib['global_idx']}", use_container_width=True):
+                            st.session_state["selected_field_idx"] = sib["global_idx"]
+                            st.session_state["preview_page_idx"] = sib["page_idx"]
+                            st.rerun()
 
     with st.form(key=f"field_edit_form_{selected_index}"):
         # 1. Field Name Identifier
@@ -532,11 +615,15 @@ with col_editor:
         elif w_type == fitz.PDF_WIDGET_TYPE_RADIOBUTTON:
             st.markdown("**Radio Button Option & Export Value:**")
             new_export_val = st.text_input(
-                "Export Value / On-State (/Opt):",
-                value=str(selected_field.get("on_state", "Option")),
+                "Export Value / On-State (/Opt or /AP):",
+                value=str(selected_field.get("on_state", f"Option_{selected_field['button_idx']}")),
                 help="The export value or token stored when this specific radio button is selected.",
             )
-            is_radio_active = bool(current_val) if isinstance(current_val, bool) else (str(current_val) == str(selected_field.get("on_state", "")))
+            is_radio_active = (
+                bool(current_val)
+                if isinstance(current_val, bool)
+                else (str(current_val) == str(selected_field.get("on_state", "")))
+            )
             make_active = st.checkbox("Mark this Radio Button as Selected / Active", value=is_radio_active)
             new_val = new_export_val if make_active else False
 
@@ -613,32 +700,83 @@ with col_editor:
     )
 
 with col_preview:
-    st.subheader(f"👁️ Visual Page Preview (Page {active_page_idx + 1})")
+    st.subheader("👁️ Visual Page Preview")
 
     # Zoom controls & Page Navigation
-    col_zoom, col_pnav = st.columns([1, 1])
+    col_pnav, col_zoom = st.columns([3, 2])
+
+    with col_pnav:
+        # Page switcher
+        page_options = list(range(total_doc_pages))
+        current_page_idx = min(st.session_state.get("preview_page_idx", active_page_idx), total_doc_pages - 1)
+        selected_preview_page = st.selectbox(
+            "Preview Page:",
+            options=page_options,
+            format_func=lambda p: f"Page {p + 1} of {total_doc_pages}",
+            index=current_page_idx,
+            key="page_switcher_select",
+        )
+        st.session_state["preview_page_idx"] = selected_preview_page
+
     with col_zoom:
+        # Safe Zoom Factor slider (guaranteed to match iterable options)
+        current_zoom = st.session_state.get("zoom_level", 1.5)
+        if current_zoom not in ZOOM_OPTIONS:
+            current_zoom = 1.5
+            st.session_state["zoom_level"] = 1.5
+
         zoom_val = st.select_slider(
             "Zoom Factor",
-            options=[1.0, 1.5, 2.0, 2.5],
-            value=st.session_state.get("zoom_level", 1.8),
+            options=ZOOM_OPTIONS,
+            value=current_zoom,
             key="zoom_slider",
         )
         st.session_state["zoom_level"] = zoom_val
 
-    with col_pnav:
-        st.caption(f"Viewing Page {active_page_idx + 1} of {total_doc_pages}")
+    # Dual Viewer Tabs: High-Res PyMuPDF Rendered Preview & Native Embedded PDF
+    tab_rendered, tab_embed = st.tabs(["🖼️ PyMuPDF Rendered Preview", "📑 Native Interactive PDF Viewer"])
 
-    # Render page with bounding highlight box
-    preview_img = render_page_with_highlight(
-        pdf_bytes=st.session_state["current_pdf_bytes"],
-        page_idx=active_page_idx,
-        target_rect=selected_field["rect"],
-        zoom_factor=zoom_val,
-    )
+    with tab_rendered:
+        try:
+            # Highlight target rect if previewing the active field's page
+            highlight_rect = selected_field["rect"] if selected_preview_page == active_page_idx else None
 
-    st.image(
-        preview_img,
-        caption=f"Page {active_page_idx + 1} Preview - Highlighting '{selected_field['field_name']}'",
-        use_container_width=True,
-    )
+            preview_img = render_page_with_highlight(
+                pdf_bytes=st.session_state["current_pdf_bytes"],
+                page_idx=selected_preview_page,
+                target_rect=highlight_rect,
+                zoom_factor=zoom_val,
+            )
+
+            caption_txt = (
+                f"Page {selected_preview_page + 1} Preview — Highlighting '{selected_field['field_name']}'"
+                if highlight_rect
+                else f"Page {selected_preview_page + 1} Preview"
+            )
+
+            st.image(
+                preview_img,
+                caption=caption_txt,
+                use_container_width=True,
+            )
+        except Exception as err:
+            st.error(f"⚠️ Could not render visual image preview: {err}")
+            st.info("You can still view the document via the 'Native Interactive PDF Viewer' tab.")
+
+    with tab_embed:
+        try:
+            base64_pdf = base64.b64encode(st.session_state["current_pdf_bytes"]).decode("utf-8")
+            pdf_embed_html = f"""
+            <iframe
+                src="data:application/pdf;base64,{base64_pdf}#page={selected_preview_page + 1}&toolbar=1&navpanes=1"
+                width="100%"
+                height="750px"
+                type="application/pdf"
+                style="border: 1px solid #334155; border-radius: 8px; background-color: #0f172a;"
+            >
+                <p>Your browser does not support embedded PDF viewing. Please download the PDF to view locally.</p>
+            </iframe>
+            """
+            st.components.v1.html(pdf_embed_html, height=770)
+        except Exception as err:
+            st.warning(f"Could not load embedded PDF frame: {err}")
