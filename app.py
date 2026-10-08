@@ -21,6 +21,42 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Custom CSS styling to provide a modern, sleek studio appearance matching the web view
+st.markdown(
+    """
+<style>
+    .stApp {
+        background-color: #020617;
+        color: #f8fafc;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #0f172a !important;
+        border-right: 1px solid #1e293b !important;
+    }
+    .field-card {
+        padding: 12px;
+        background-color: #0f172a;
+        border: 1px solid #1e293b;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
+    .field-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        font-family: monospace;
+    }
+    .badge-text { background: rgba(79, 70, 229, 0.2); color: #818cf8; border: 1px solid rgba(79, 70, 229, 0.4); }
+    .badge-check { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .badge-radio { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .badge-combo { background: rgba(14, 165, 233, 0.2); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.4); }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 # Friendly mapping for PyMuPDF widget types
 WIDGET_TYPE_NAMES = {
     fitz.PDF_WIDGET_TYPE_UNKNOWN: "Unknown",
@@ -213,7 +249,12 @@ def extract_all_fields(pdf_bytes: bytes) -> list[dict]:
     return fields
 
 
-def render_page_with_highlight(pdf_bytes: bytes, page_idx: int, target_rect: list[float] | None = None) -> Image.Image:
+def render_page_with_highlight(
+    pdf_bytes: bytes,
+    page_idx: int,
+    target_rect: list[float] | None = None,
+    zoom_factor: float = 2.0,
+) -> Image.Image:
     """Render a visual PNG image preview of the specific page with a highlight box over target_rect."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     if page_idx >= len(doc):
@@ -221,7 +262,7 @@ def render_page_with_highlight(pdf_bytes: bytes, page_idx: int, target_rect: lis
         return Image.new("RGB", (400, 200), color=(240, 240, 240))
 
     page = doc[page_idx]
-    zoom = 2.0  # High DPI rendering (144 dpi)
+    zoom = zoom_factor
     mat = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=mat, alpha=False)
 
@@ -348,6 +389,9 @@ if "filename" not in st.session_state:
 if "success_msg" not in st.session_state:
     st.session_state["success_msg"] = None
 
+if "zoom_level" not in st.session_state:
+    st.session_state["zoom_level"] = 1.8
+
 
 # ---------------------------------------------------------
 # Main UI Layout
@@ -441,8 +485,9 @@ active_page_idx = selected_field["page_idx"]
 
 # Sidebar Summary
 st.sidebar.divider()
+total_doc_pages = fitz.open(stream=pdf_bytes, filetype="pdf").page_count
 st.sidebar.markdown(f"**Document Name:** `{st.session_state['filename']}`")
-st.sidebar.markdown(f"**Total Pages:** {fitz.open(stream=pdf_bytes, filetype='pdf').page_count}")
+st.sidebar.markdown(f"**Total Pages:** {total_doc_pages}")
 st.sidebar.markdown(f"**Total Form Widgets:** {len(fields)}")
 
 # ---------------------------------------------------------
@@ -569,13 +614,27 @@ with col_editor:
 
 with col_preview:
     st.subheader(f"👁️ Visual Page Preview (Page {active_page_idx + 1})")
-    st.caption("The active form field is highlighted with an indigo bounding indicator.")
+
+    # Zoom controls & Page Navigation
+    col_zoom, col_pnav = st.columns([1, 1])
+    with col_zoom:
+        zoom_val = st.select_slider(
+            "Zoom Factor",
+            options=[1.0, 1.5, 2.0, 2.5],
+            value=st.session_state.get("zoom_level", 1.8),
+            key="zoom_slider",
+        )
+        st.session_state["zoom_level"] = zoom_val
+
+    with col_pnav:
+        st.caption(f"Viewing Page {active_page_idx + 1} of {total_doc_pages}")
 
     # Render page with bounding highlight box
     preview_img = render_page_with_highlight(
         pdf_bytes=st.session_state["current_pdf_bytes"],
         page_idx=active_page_idx,
         target_rect=selected_field["rect"],
+        zoom_factor=zoom_val,
     )
 
     st.image(
