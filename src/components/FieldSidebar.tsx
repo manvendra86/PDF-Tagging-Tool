@@ -101,6 +101,35 @@ export const FieldSidebar: React.FC<FieldSidebarProps> = ({
         </div>
       </div>
 
+      {/* Field List Dropdown */}
+      <div className="p-3 bg-slate-900/90 border-b border-slate-800 space-y-1.5">
+        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
+          <span className="flex items-center gap-1.5">
+            <ListFilter className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Field List Dropdown:</span>
+          </span>
+          <span className="text-[10px] text-indigo-400 font-mono">{filteredFields.length} fields</span>
+        </div>
+        <select
+          value={selectedFieldId || ''}
+          onChange={(e) => {
+            const chosen = fields.find((f) => f.id === e.target.value);
+            if (chosen) onSelectField(chosen);
+          }}
+          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 hover:border-slate-600 focus:border-indigo-500 rounded-md text-xs text-white focus:outline-none font-mono cursor-pointer transition-colors"
+        >
+          {filteredFields.length === 0 ? (
+            <option value="">No matching fields</option>
+          ) : (
+            filteredFields.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name} — {f.type} (Page {f.pageIndex + 1})
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+
       {/* Field List */}
       <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
         {filteredFields.length === 0 ? (

@@ -208,6 +208,54 @@ export const PagePreview: React.FC<PagePreviewProps> = ({
         </div>
       </div>
 
+      {/* Quick Interactive Field Selector Bar for Current Page */}
+      <div className="px-4 py-2 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center gap-2 text-xs">
+        <span className="font-semibold text-slate-300 flex items-center gap-1.5 shrink-0">
+          <Crosshair className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Fields on Page {currentPageIndex + 1}:</span>
+        </span>
+
+        {/* Dropdown selector for fields on this page */}
+        <select
+          value={selectedField?.pageIndex === currentPageIndex ? (selectedField?.id || '') : ''}
+          onChange={(e) => {
+            const chosen = pageFields.find((f) => f.id === e.target.value);
+            if (chosen) onSelectField(chosen);
+          }}
+          className="px-2.5 py-1 bg-slate-950 border border-slate-700 hover:border-slate-600 rounded-md text-xs text-white focus:outline-none focus:border-indigo-500 font-mono cursor-pointer"
+        >
+          <option value="">-- Choose field on Page {currentPageIndex + 1} --</option>
+          {pageFields.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name} ({f.type}){f.type === 'Radio' ? ` [${f.onState || 'Option'}]` : ''}
+            </option>
+          ))}
+        </select>
+
+        {/* Quick clickable buttons/chips for fields on this page */}
+        <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto max-w-full">
+          {pageFields.map((f) => {
+            const isSelected = selectedField?.id === f.id;
+            return (
+              <button
+                key={f.id}
+                onClick={() => onSelectField(f)}
+                className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors flex items-center gap-1 cursor-pointer border ${
+                  isSelected
+                    ? 'bg-indigo-600 border-indigo-400 text-white font-medium shadow-xs ring-1 ring-indigo-400'
+                    : 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:bg-slate-700 hover:text-white'
+                }`}
+                title={`Click to select & edit ${f.name} (${f.type})`}
+              >
+                <span>{f.type === 'Radio' ? '🔘' : f.type === 'Checkbox' ? '☑️' : f.type === 'Dropdown' ? '🔽' : '✍️'}</span>
+                <span>{f.name}</span>
+                {f.type === 'Radio' && <span className="opacity-80">[{f.onState || 'Opt'}]</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Main Viewport */}
       {previewMode === 'native' && blobUrl ? (
         <div className="flex-1 w-full h-full bg-slate-900 p-2">
@@ -264,13 +312,16 @@ export const PagePreview: React.FC<PagePreviewProps> = ({
               return (
                 <div
                   key={f.id}
-                  onClick={() => onSelectField(f)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectField(f);
+                  }}
                   className={`absolute cursor-pointer transition-all flex items-center px-1.5 ${
                     isSelected
-                      ? 'ring-2 ring-indigo-600 bg-indigo-500/25 z-20 shadow-md'
+                      ? 'ring-2 ring-indigo-600 bg-indigo-500/25 z-25 shadow-md'
                       : f.type === 'Radio'
-                      ? 'border border-dashed border-amber-500/80 bg-amber-400/15 hover:bg-amber-400/30 z-10'
-                      : 'border border-dashed border-indigo-400/70 bg-indigo-400/10 hover:bg-indigo-400/25 z-10'
+                      ? 'border border-dashed border-amber-500/80 bg-amber-400/20 hover:bg-amber-400/40 z-20'
+                      : 'border border-dashed border-indigo-400/80 bg-indigo-400/15 hover:bg-indigo-400/35 z-20'
                   }`}
                   style={{
                     left: `${left}px`,

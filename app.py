@@ -572,8 +572,34 @@ if not fields:
     st.stop()
 
 # Validate selected field index
-if st.session_state["selected_field_idx"] >= len(fields):
+if st.session_state["selected_field_idx"] >= len(fields) or st.session_state["selected_field_idx"] < 0:
     st.session_state["selected_field_idx"] = 0
+
+def choose_field(idx: int):
+    """Unified field selection helper that updates state and keeps all dropdowns & preview in sync."""
+    if 0 <= idx < len(fields):
+        st.session_state["selected_field_idx"] = idx
+        target_page = fields[idx]["page_idx"]
+        st.session_state["preview_page_idx"] = target_page
+        st.session_state["page_nav_selector"] = target_page
+        st.session_state["sidebar_field_dropdown_widget"] = idx
+        st.session_state["preview_field_dropdown_widget"] = idx
+        st.rerun()
+
+def format_field_display(idx: int):
+    """Format field label for selectboxes."""
+    if not (0 <= idx < len(fields)):
+        return f"Field #{idx}"
+    f = fields[idx]
+    w_type = f["field_type"]
+    icon = (
+        "🔘" if w_type == fitz.PDF_WIDGET_TYPE_RADIOBUTTON
+        else "☑️" if w_type == fitz.PDF_WIDGET_TYPE_CHECKBOX
+        else "🔽" if w_type in (fitz.PDF_WIDGET_TYPE_COMBOBOX, fitz.PDF_WIDGET_TYPE_LISTBOX)
+        else "✍️"
+    )
+    extra = f" [{f.get('on_state', '')}]" if w_type == fitz.PDF_WIDGET_TYPE_RADIOBUTTON else ""
+    return f"{icon} {f['field_name']}{extra} — {f['field_type_str']} (Page {f['page_idx'] + 1})"
 
 selected_field = fields[st.session_state["selected_field_idx"]]
 active_page_idx = selected_field["page_idx"]
@@ -631,8 +657,24 @@ with col_sidebar:
         st.info("No fields match your filter.")
         filtered_indices = list(range(len(fields)))
 
-    # Field Cards List: Visual representation with Name, under that Field Type, and Page Number
-    st.markdown("**Fields:**")
+    # 3. Field List Dropdown (Direct field dropdown selector)
+    st.markdown("**📋 Field List Dropdown:**")
+    curr_global_idx = st.session_state.get("selected_field_idx", 0)
+    dropdown_default_pos = filtered_indices.index(curr_global_idx) if curr_global_idx in filtered_indices else 0
+
+    chosen_sidebar_field = st.selectbox(
+        "Choose field to inspect & edit:",
+        options=filtered_indices,
+        index=dropdown_default_pos,
+        format_func=format_field_display,
+        key="sidebar_field_dropdown_widget",
+        label_visibility="collapsed",
+    )
+    if chosen_sidebar_field != st.session_state.get("selected_field_idx"):
+        choose_field(chosen_sidebar_field)
+
+    # 4. Field Visual Cards List: Visual representation with Name, under that Field Type, and Page Number
+    st.markdown("**Visual Field Cards:**")
     for idx in filtered_indices:
         f = fields[idx]
         val = f.get("field_value")
@@ -699,11 +741,9 @@ with col_sidebar:
         )
 
         # Select button for the field
-        btn_label = f"👉 Selected" if is_selected else f"Select '{f['field_name']}'"
+        btn_label = f"👉 Active Selection" if is_selected else f"Select '{f['field_name']}'"
         if st.button(btn_label, key=f"sel_fld_{idx}", disabled=is_selected):
-            st.session_state["selected_field_idx"] = idx
-            st.session_state["preview_page_idx"] = f["page_idx"]
-            st.rerun()
+            choose_field(idx)
 
     st.caption(f"📁 Document: `{st.session_state['filename']}` | Total Pages: {total_doc_pages}")
 
@@ -916,12 +956,27 @@ with col_preview:
 
     # =====================================================
     # Quick Interactive Field Selector for the Current Page
-    # (Makes every field on this page immediately clickable & selectable!)
+    # (Makes every field on this page immediately selectable via dropdown & quick buttons!)
     # =====================================================
     page_fields = [f for f in fields if f["page_idx"] == selected_preview_page]
 
-    st.markdown(f"**🎯 Fields on Page {selected_preview_page + 1} ({len(page_fields)} fields) — Click to Select:**")
+    st.markdown(f"**🎯 Fields on Page {selected_preview_page + 1} ({len(page_fields)} fields):**")
     if page_fields:
+        page_field_indices = [pf["global_idx"] for pf in page_fields]
+        curr_page_f_idx = st.session_state.get("selected_field_idx", 0)
+        curr_page_pos = page_field_indices.index(curr_page_f_idx) if curr_page_f_idx in page_field_indices else 0
+
+        chosen_preview_field = st.selectbox(
+            f"Select field on Page {selected_preview_page + 1} to inspect:",
+            options=page_field_indices,
+            index=curr_page_pos,
+            format_func=format_field_display,
+            key="preview_field_dropdown_widget",
+            label_visibility="collapsed",
+        )
+        if chosen_preview_field != st.session_state.get("selected_field_idx"):
+            choose_field(chosen_preview_field)
+
         cols_per_row = 3
         for chunk_i in range(0, len(page_fields), cols_per_row):
             chunk = page_fields[chunk_i : chunk_i + cols_per_row]
@@ -943,9 +998,7 @@ with col_preview:
                     disabled=is_this_selected,
                     help=f"Select {pf['field_name']} ({pf['field_type_str']}) to inspect & edit",
                 ):
-                    st.session_state["selected_field_idx"] = pf["global_idx"]
-                    st.session_state["preview_page_idx"] = pf["page_idx"]
-                    st.rerun()
+                    choose_field(pf["global_idx"])
 
     # Visual Preview Tab & Native PDF Viewer Tab
     tab_rendered, tab_embed = st.tabs(["🖼️ PyMuPDF Rendered Preview", "📑 Native Interactive PDF Viewer"])
