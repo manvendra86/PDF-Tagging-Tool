@@ -575,13 +575,14 @@ if not fields:
 if st.session_state["selected_field_idx"] >= len(fields) or st.session_state["selected_field_idx"] < 0:
     st.session_state["selected_field_idx"] = 0
 
-def choose_field(idx: int):
+def choose_field(idx: int, sync_page: bool = True):
     """Unified field selection helper that updates state and keeps all dropdowns & preview in sync."""
     if 0 <= idx < len(fields):
         if st.session_state.get("selected_field_idx") != idx:
             st.session_state["selected_field_idx"] = idx
-            target_page = fields[idx]["page_idx"]
-            st.session_state["preview_page_idx"] = target_page
+            if sync_page:
+                target_page = fields[idx]["page_idx"]
+                st.session_state["preview_page_idx"] = target_page
             st.rerun()
 
 def format_field_display(idx: int):
@@ -664,11 +665,12 @@ with col_sidebar:
         "Choose field to inspect & edit:",
         options=filtered_indices,
         index=dropdown_default_pos,
+        key=f"sidebar_field_select_{curr_global_idx}",
         format_func=format_field_display,
         label_visibility="collapsed",
     )
-    if chosen_sidebar_field != st.session_state.get("selected_field_idx"):
-        choose_field(chosen_sidebar_field)
+    if chosen_sidebar_field != curr_global_idx:
+        choose_field(chosen_sidebar_field, sync_page=True)
 
     # 4. Field Visual Cards List: Visual representation with Name, under that Field Type, and Page Number
     st.markdown("**Visual Field Cards:**")
@@ -933,8 +935,13 @@ with col_preview:
             options=list(range(total_doc_pages)),
             format_func=lambda p: f"Page {p + 1} of {total_doc_pages}",
             index=current_preview_page,
+            key=f"nav_page_select_{current_preview_page}",
         )
-        st.session_state["preview_page_idx"] = selected_preview_page
+        if selected_preview_page != current_preview_page:
+            st.session_state["preview_page_idx"] = selected_preview_page
+            st.rerun()
+        else:
+            st.session_state["preview_page_idx"] = selected_preview_page
 
     with nav_c2:
         current_zoom = st.session_state.get("zoom_level", 1.5)
@@ -952,26 +959,42 @@ with col_preview:
 
     # =====================================================
     # Quick Interactive Field Selector for the Current Page
-    # (Makes every field on this page immediately selectable via dropdown & quick buttons!)
+    # (Select any field directly on this page via dropdown or click chips)
     # =====================================================
     page_fields = [f for f in fields if f["page_idx"] == selected_preview_page]
 
     st.markdown(f"**🎯 Fields on Page {selected_preview_page + 1} ({len(page_fields)} fields):**")
     if page_fields:
         page_field_indices = [pf["global_idx"] for pf in page_fields]
-        curr_page_f_idx = st.session_state.get("selected_field_idx", 0)
-        curr_page_pos = page_field_indices.index(curr_page_f_idx) if curr_page_f_idx in page_field_indices else 0
+        curr_global_idx = st.session_state.get("selected_field_idx", 0)
+        is_on_page = curr_global_idx in page_field_indices
+
+        # Dropdown options for this page
+        dropdown_opts = ([-1] if not is_on_page else []) + page_field_indices
+        curr_pos = dropdown_opts.index(curr_global_idx) if is_on_page else 0
+
+        def format_preview_option(val):
+            if val == -1:
+                return f"-- Select a field on Page {selected_preview_page + 1} to inspect --"
+            return format_field_display(val)
 
         chosen_preview_field = st.selectbox(
             f"Select field on Page {selected_preview_page + 1} to inspect:",
-            options=page_field_indices,
-            index=curr_page_pos,
-            format_func=format_field_display,
+            options=dropdown_opts,
+            index=curr_pos,
+            format_func=format_preview_option,
+            key=f"preview_field_select_p{selected_preview_page}_{curr_global_idx if is_on_page else 'none'}",
             label_visibility="collapsed",
         )
-        if chosen_preview_field != st.session_state.get("selected_field_idx"):
-            choose_field(chosen_preview_field)
+        if chosen_preview_field != -1 and chosen_preview_field != curr_global_idx:
+            choose_field(chosen_preview_field, sync_page=False)
 
+        # Quick clickable button chips for fields on this page
+        st.markdown(
+            "<div style='font-size: 11px; color: #94a3b8; margin-top: 4px; margin-bottom: 6px;'>"
+            "💡 <i>Click any field below to highlight on the PDF and inspect in editor:</i></div>",
+            unsafe_allow_html=True,
+        )
         cols_per_row = 3
         for chunk_i in range(0, len(page_fields), cols_per_row):
             chunk = page_fields[chunk_i : chunk_i + cols_per_row]
@@ -993,49 +1016,30 @@ with col_preview:
                     disabled=is_this_selected,
                     help=f"Select {pf['field_name']} ({pf['field_type_str']}) to inspect & edit",
                 ):
-                    choose_field(pf["global_idx"])
+                    choose_field(pf["global_idx"], sync_page=False)
+    else:
+        st.info(f"No interactive fields on Page {selected_preview_page + 1}.")
 
-    # Visual Preview Tab & Native PDF Viewer Tab
-    tab_rendered, tab_embed = st.tabs(["🖼️ PyMuPDF Rendered Preview", "📑 Native Interactive PDF Viewer"])
+    # Direct Visual PyMuPDF Rendered Preview (Native viewer tab completely removed)
+    st.markdown("---")
+    try:
+        # Render page with ALL fields visibly outlined and the selected field highlighted
+        preview_img = render_page_with_all_fields(
+            pdf_bytes=st.session_state["current_pdf_bytes"],
+            page_idx=selected_preview_page,
+            all_fields=fields,
+            selected_idx=st.session_state["selected_field_idx"],
+            zoom_factor=zoom_val,
+        )
 
-    with tab_rendered:
-        try:
-            # Render page with ALL fields visibly outlined and the selected field highlighted
-            preview_img = render_page_with_all_fields(
-                pdf_bytes=st.session_state["current_pdf_bytes"],
-                page_idx=selected_preview_page,
-                all_fields=fields,
-                selected_idx=st.session_state["selected_field_idx"],
-                zoom_factor=zoom_val,
-            )
+        caption_txt = (
+            f"Page {selected_preview_page + 1} Preview — Editing '{selected_field['field_name']}'"
+            if selected_field["page_idx"] == selected_preview_page
+            else f"Page {selected_preview_page + 1} Preview (Editing '{selected_field['field_name']}' on Page {selected_field['page_idx'] + 1})"
+        )
 
-            caption_txt = (
-                f"Page {selected_preview_page + 1} Preview — Editing '{selected_field['field_name']}'"
-                if selected_field["page_idx"] == selected_preview_page
-                else f"Page {selected_preview_page + 1} Preview"
-            )
+        # Safely render image with cross-version compatibility
+        render_st_image_compat(preview_img, caption=caption_txt)
 
-            # Safely render image with cross-version compatibility
-            render_st_image_compat(preview_img, caption=caption_txt)
-
-        except Exception as err:
-            st.error(f"⚠️ Could not render visual image preview: {err}")
-            st.info("You can also view the document via the 'Native Interactive PDF Viewer' tab.")
-
-    with tab_embed:
-        try:
-            base64_pdf = base64.b64encode(st.session_state["current_pdf_bytes"]).decode("utf-8")
-            pdf_embed_html = f"""
-            <iframe
-                src="data:application/pdf;base64,{base64_pdf}#page={selected_preview_page + 1}&toolbar=1&navpanes=1"
-                width="100%"
-                height="720px"
-                type="application/pdf"
-                style="border: 1px solid #334155; border-radius: 8px; background-color: #0f172a;"
-            >
-                <p>Your browser does not support embedded PDF viewing. Please use the PyMuPDF Rendered Preview tab or download the PDF.</p>
-            </iframe>
-            """
-            st.components.v1.html(pdf_embed_html, height=740)
-        except Exception as err:
-            st.warning(f"Could not load embedded PDF frame: {err}")
+    except Exception as err:
+        st.error(f"⚠️ Could not render visual image preview: {err}")

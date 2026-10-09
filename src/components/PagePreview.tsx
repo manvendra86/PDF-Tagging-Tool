@@ -39,8 +39,6 @@ export const PagePreview: React.FC<PagePreviewProps> = ({
   const [zoom, setZoom] = useState<number>(1.0);
   const [isRendering, setIsRendering] = useState<boolean>(false);
   const [renderError, setRenderError] = useState<string | null>(null);
-  const [previewMode, setPreviewMode] = useState<'canvas' | 'native'>('canvas');
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [renderedMetrics, setRenderedMetrics] = useState<{
@@ -57,24 +55,9 @@ export const PagePreview: React.FC<PagePreviewProps> = ({
     scale: 1.5,
   });
 
-  // Maintain blob URL for native PDF preview mode
-  useEffect(() => {
-    if (!pdfBytes) {
-      setBlobUrl(null);
-      return;
-    }
-    const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    setBlobUrl(url);
-
-    return () => {
-      URL.revokeObjectURL(url);
-    };
-  }, [pdfBytes]);
-
   // Render the current PDF page directly to the canvas using pdfjs-dist
   useEffect(() => {
-    if (!pdfBytes || !canvasRef.current || previewMode !== 'canvas') return;
+    if (!pdfBytes || !canvasRef.current) return;
 
     let isCancelled = false;
     setIsRendering(true);
@@ -107,7 +90,7 @@ export const PagePreview: React.FC<PagePreviewProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [pdfBytes, currentPageIndex, previewMode]);
+  }, [pdfBytes, currentPageIndex]);
 
   // Filter fields on current page
   const pageFields = fields.filter((f) => f.pageIndex === currentPageIndex);
@@ -123,32 +106,7 @@ export const PagePreview: React.FC<PagePreviewProps> = ({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 font-semibold text-white">
             <Eye className="w-4 h-4 text-indigo-400" />
-            <span>Document Preview</span>
-          </div>
-
-          <div className="flex items-center gap-1 bg-slate-950/80 p-0.5 rounded border border-slate-800 text-[11px]">
-            <button
-              onClick={() => setPreviewMode('canvas')}
-              className={`px-2 py-0.5 rounded transition-colors ${
-                previewMode === 'canvas'
-                  ? 'bg-indigo-600 text-white font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Interactive Canvas with Field Overlays"
-            >
-              Interactive Overlay
-            </button>
-            <button
-              onClick={() => setPreviewMode('native')}
-              className={`px-2 py-0.5 rounded transition-colors ${
-                previewMode === 'native'
-                  ? 'bg-indigo-600 text-white font-medium shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Native Browser PDF Document Engine"
-            >
-              Native PDF
-            </button>
+            <span>Interactive Document Preview</span>
           </div>
 
           <span className="text-[11px] text-slate-400 hidden sm:inline">
@@ -257,16 +215,7 @@ export const PagePreview: React.FC<PagePreviewProps> = ({
       </div>
 
       {/* Main Viewport */}
-      {previewMode === 'native' && blobUrl ? (
-        <div className="flex-1 w-full h-full bg-slate-900 p-2">
-          <iframe
-            src={`${blobUrl}#page=${currentPageIndex + 1}`}
-            className="w-full h-full rounded border border-slate-700 bg-white shadow-xl"
-            title="Native PDF Preview"
-          />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-auto p-6 flex justify-center items-start bg-slate-950 relative">
+      <div className="flex-1 overflow-auto p-6 flex justify-center items-start bg-slate-950 relative">
           {/* Loading Indicator */}
           {isRendering && (
             <div className="absolute top-8 z-30 flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded-full text-xs text-indigo-300 shadow-xl backdrop-blur-xs">
@@ -369,7 +318,6 @@ export const PagePreview: React.FC<PagePreviewProps> = ({
             })}
           </div>
         </div>
-      )}
     </div>
   );
 };
