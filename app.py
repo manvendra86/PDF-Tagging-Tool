@@ -578,13 +578,11 @@ if st.session_state["selected_field_idx"] >= len(fields) or st.session_state["se
 def choose_field(idx: int):
     """Unified field selection helper that updates state and keeps all dropdowns & preview in sync."""
     if 0 <= idx < len(fields):
-        st.session_state["selected_field_idx"] = idx
-        target_page = fields[idx]["page_idx"]
-        st.session_state["preview_page_idx"] = target_page
-        st.session_state["page_nav_selector"] = target_page
-        st.session_state["sidebar_field_dropdown_widget"] = idx
-        st.session_state["preview_field_dropdown_widget"] = idx
-        st.rerun()
+        if st.session_state.get("selected_field_idx") != idx:
+            st.session_state["selected_field_idx"] = idx
+            target_page = fields[idx]["page_idx"]
+            st.session_state["preview_page_idx"] = target_page
+            st.rerun()
 
 def format_field_display(idx: int):
     """Format field label for selectboxes."""
@@ -667,7 +665,6 @@ with col_sidebar:
         options=filtered_indices,
         index=dropdown_default_pos,
         format_func=format_field_display,
-        key="sidebar_field_dropdown_widget",
         label_visibility="collapsed",
     )
     if chosen_sidebar_field != st.session_state.get("selected_field_idx"):
@@ -936,7 +933,6 @@ with col_preview:
             options=list(range(total_doc_pages)),
             format_func=lambda p: f"Page {p + 1} of {total_doc_pages}",
             index=current_preview_page,
-            key="page_nav_selector",
         )
         st.session_state["preview_page_idx"] = selected_preview_page
 
@@ -971,7 +967,6 @@ with col_preview:
             options=page_field_indices,
             index=curr_page_pos,
             format_func=format_field_display,
-            key="preview_field_dropdown_widget",
             label_visibility="collapsed",
         )
         if chosen_preview_field != st.session_state.get("selected_field_idx"):
