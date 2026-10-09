@@ -7,9 +7,7 @@ import {
   ChevronDown,
   ListFilter,
   FileCheck2,
-  Sparkles,
   Radio,
-  FileSpreadsheet,
 } from 'lucide-react';
 import { FormFieldItem, FieldType } from '../types';
 
@@ -18,7 +16,7 @@ interface FieldSidebarProps {
   selectedFieldId: string | null;
   onSelectField: (field: FormFieldItem) => void;
   onUploadFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onLoadSample: (template: 'general' | 'inspection' | 'w4') => void;
+  onLoadSample?: (template: 'general' | 'inspection' | 'w4') => void;
   filename: string;
   pageCount: number;
 }
@@ -63,47 +61,13 @@ export const FieldSidebar: React.FC<FieldSidebarProps> = ({
 
   return (
     <aside className="w-80 shrink-0 border-r border-slate-800 bg-slate-900/95 flex flex-col h-[calc(100vh-57px)]">
-      {/* Upload and Sample Section */}
-      <div className="p-3.5 border-b border-slate-800/80 space-y-2.5">
-        <label className="flex items-center justify-center gap-2 w-full py-2 px-3 border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg cursor-pointer bg-slate-800/40 hover:bg-slate-800/80 transition-all text-xs font-medium text-slate-300 hover:text-white">
-          <Upload className="w-4 h-4 text-indigo-400" />
+      {/* Upload Section */}
+      <div className="p-3.5 border-b border-slate-800/80">
+        <label className="flex items-center justify-center gap-2 w-full py-2.5 px-3 border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg cursor-pointer bg-slate-800/40 hover:bg-slate-800/80 transition-all text-xs font-medium text-slate-300 hover:text-white group">
+          <Upload className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition-transform" />
           <span>Upload Fillable PDF</span>
           <input type="file" accept=".pdf" className="hidden" onChange={onUploadFile} />
         </label>
-
-        {/* Built-in Samples Bar */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <span className="flex items-center gap-1 font-medium">
-              <Sparkles className="w-3 h-3 text-amber-400" />
-              Quick Sample Forms:
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-1.5">
-            <button
-              onClick={() => onLoadSample('general')}
-              className="py-1 px-1.5 text-[11px] bg-slate-800 hover:bg-slate-700/80 text-slate-300 rounded border border-slate-700/60 truncate transition-colors cursor-pointer"
-              title="Multi-page Sample Form with Radio Group, Text, Checkbox, Dropdown & ListBox"
-            >
-              Profile Form
-            </button>
-            <button
-              onClick={() => onLoadSample('inspection')}
-              className="py-1 px-1.5 text-[11px] bg-slate-800 hover:bg-slate-700/80 text-slate-300 rounded border border-slate-700/60 truncate transition-colors cursor-pointer"
-              title="Facility Safety Audit with Radio Verdict and Checklist"
-            >
-              Audit Form
-            </button>
-            <button
-              onClick={() => onLoadSample('w4')}
-              className="py-1 px-1.5 text-[11px] bg-slate-800 hover:bg-slate-700/80 text-slate-300 rounded border border-slate-700/60 truncate transition-colors cursor-pointer"
-              title="Employee Withholding Allowance (W-4) Form with Radio Marital Status"
-            >
-              W-4 Form
-            </button>
-          </div>
-        </div>
       </div>
 
       {/* Search & Type Filter */}
@@ -151,63 +115,64 @@ export const FieldSidebar: React.FC<FieldSidebarProps> = ({
               <button
                 key={field.id}
                 onClick={() => onSelectField(field)}
-                className={`w-full text-left p-3 transition-colors flex items-start gap-2.5 cursor-pointer ${
+                className={`w-full text-left p-3 transition-colors flex items-start gap-2.5 cursor-pointer group ${
                   isSelected
-                    ? 'bg-indigo-950/50 border-l-2 border-indigo-500 text-white'
+                    ? 'bg-indigo-950/60 border-l-3 border-indigo-500 text-white'
                     : 'hover:bg-slate-800/50 text-slate-300'
                 }`}
               >
-                <div className="mt-0.5 p-1 rounded bg-slate-800/80 border border-slate-700/50">
+                {/* Visual Icon */}
+                <div
+                  className={`mt-0.5 p-1.5 rounded border shrink-0 transition-colors ${
+                    isSelected
+                      ? 'bg-indigo-900/60 border-indigo-500/60'
+                      : 'bg-slate-800/80 border-slate-700/50 group-hover:border-slate-600'
+                  }`}
+                >
                   {getFieldIcon(field.type)}
                 </div>
 
+                {/* Field Details: Name, under that Field Type & Page Number */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs font-semibold font-mono truncate text-slate-100">
+                  {/* Row 1: Name of the field */}
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-xs font-semibold font-mono text-slate-100 truncate">
                       {field.name}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono shrink-0 bg-slate-800 px-1 rounded">
-                      P.{field.pageIndex + 1}
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700/60 shrink-0 font-medium">
+                      Page {field.pageIndex + 1}
                     </span>
                   </div>
 
-                  {field.type === 'Radio' ? (
-                    <div className="mt-1 space-y-0.5">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-amber-300 font-medium truncate">
-                          Option: &quot;{field.onState || 'Option'}&quot;
+                  {/* Row 2: Under that field type badge & metadata */}
+                  <div className="mt-1 flex items-center justify-between gap-1.5 text-[11px]">
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium ${
+                        field.type === 'Radio'
+                          ? 'bg-amber-950/80 text-amber-300 border border-amber-800/50'
+                          : field.type === 'Checkbox'
+                          ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/50'
+                          : field.type === 'Dropdown' || field.type === 'ListBox'
+                          ? 'bg-sky-950/80 text-sky-300 border border-sky-800/50'
+                          : 'bg-indigo-950/80 text-indigo-300 border border-indigo-800/50'
+                      }`}
+                    >
+                      {field.type}
+                    </span>
+
+                    {/* Secondary detail (value preview / option name) */}
+                    <span className="text-[10px] font-mono text-slate-400 truncate max-w-[130px] text-right">
+                      {field.type === 'Radio' ? (
+                        <span className="text-amber-300/90 truncate">
+                          &quot;{field.onState || 'Option'}&quot; #{((field.widgetIndex ?? 0) + 1)}/{field.totalWidgetsInField || 1}
                         </span>
-                        <span className="text-[10px] font-mono px-1 rounded bg-amber-950/60 text-amber-300 border border-amber-900/50 shrink-0">
-                          Button {(field.widgetIndex ?? 0) + 1}/{field.totalWidgetsInField || 1}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span className="text-slate-500 font-mono truncate">Group: {field.name}</span>
-                        <span
-                          className={
-                            String(field.value) === String(field.onState)
-                              ? 'text-amber-400 font-semibold'
-                              : 'text-slate-500'
-                          }
-                        >
-                          {String(field.value) === String(field.onState)
-                            ? '● Selected'
-                            : '○ Inactive'}
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2 mt-1 text-[11px] text-slate-400">
-                      <span className="truncate">{field.type}</span>
-                      <span className="truncate max-w-[110px] text-slate-500 font-mono text-[10px]">
-                        {typeof field.value === 'boolean'
-                          ? field.value
-                            ? '✓ Checked'
-                            : '✗ Unchecked'
-                          : String(field.value || '(empty)')}
-                      </span>
-                    </div>
-                  )}
+                      ) : typeof field.value === 'boolean' ? (
+                        field.value ? '✓ Checked' : '○ Unchecked'
+                      ) : (
+                        String(field.value || '(empty)')
+                      )}
+                    </span>
+                  </div>
                 </div>
               </button>
             );
