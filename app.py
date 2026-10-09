@@ -305,6 +305,21 @@ def render_page_with_highlight(
     return img
 
 
+def render_st_image_compat(image_obj, caption: str | None = None):
+    """
+    Safely render an image with backward compatibility across all Streamlit versions.
+    Streamlit >= 1.39 uses 'use_container_width=True'.
+    Streamlit < 1.39 uses 'use_column_width=True'.
+    """
+    try:
+        st.image(image_obj, caption=caption, use_container_width=True)
+    except TypeError:
+        try:
+            st.image(image_obj, caption=caption, use_column_width=True)
+        except TypeError:
+            st.image(image_obj, caption=caption)
+
+
 def update_field_in_pdf(
     pdf_bytes: bytes,
     page_idx: int,
@@ -754,11 +769,8 @@ with col_preview:
                 else f"Page {selected_preview_page + 1} Preview"
             )
 
-            st.image(
-                preview_img,
-                caption=caption_txt,
-                use_container_width=True,
-            )
+            # Version-compatible image rendering (supports Streamlit < 1.39 and >= 1.39)
+            render_st_image_compat(preview_img, caption=caption_txt)
         except Exception as err:
             st.error(f"⚠️ Could not render visual image preview: {err}")
             st.info("You can still view the document via the 'Native Interactive PDF Viewer' tab.")
